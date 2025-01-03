@@ -11,3 +11,6 @@ Este projeto é um programa em Python para modificar o arquivo `manifest.sii` do
 2. Instale as dependências com:
    ```bash
    pip install -r requirements.txt
+
+## Hash SHA256
+Para garantir a integridade do arquivo, confira a hash SHA256: 3d51ae567c1e18667cc6981e09776482b676d1592516b0195af0f3caf9bdacd9
