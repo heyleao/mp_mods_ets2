@@ -2,6 +2,11 @@
 
 Este projeto é um programa em Python para modificar o arquivo `manifest.sii` dos mods do Euro Truck Simulator 2, adicionando a linha `mp_mod_optional: true` de forma automatizada e segura.
 
+![image](https://github.com/user-attachments/assets/067fa5f1-675a-4d32-9465-485e4cab187c)
+
+![image](https://github.com/user-attachments/assets/9798c7ff-894d-4710-ae39-c4b518727ac6)
+
+
 ## Funcionalidades
 - Detecta duplicatas e corrige automaticamente.
 - Processa arquivos `.sii` diretamente ou dentro de `.zip`.
@@ -17,3 +22,4 @@ SHA256: 3d51ae567c1e18667cc6981e09776482b676d1592516b0195af0f3caf9bdacd9
 
 ## Licença
 Este projeto é licenciado sob a [GNU GPL v3](LICENSE).
+
