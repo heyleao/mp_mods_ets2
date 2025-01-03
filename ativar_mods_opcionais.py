@@ -1,98 +1,9 @@
 import os
 import zipfile
-import threading
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-
-
-def process_manifest(file_path):
-    """Corrige e adiciona a linha no arquivo manifest.sii se necessário"""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            lines = file.readlines()
-
-        inside_package = False
-        corrected_lines = []
-        mp_mod_optional_found = False
-
-        for line in lines:
-            stripped_line = line.strip()
-
-            if stripped_line.startswith("mod_package"):
-                inside_package = True
-
-            if stripped_line == "mp_mod_optional: true":
-                if mp_mod_optional_found:
-                    continue  # Remove duplicatas
-                mp_mod_optional_found = True
-
-            if stripped_line == "}" and inside_package:
-                if not mp_mod_optional_found:
-                    corrected_lines.append("    mp_mod_optional: true\n")
-                    mp_mod_optional_found = True
-                inside_package = False
-
-            corrected_lines.append(line)
-
-        if lines != corrected_lines:
-            with open(file_path, 'w', encoding='utf-8') as file:
-                file.writelines(corrected_lines)
-            return f"Modificado: {file_path}"
-
-        return f"Já está correto: {file_path}"
-
-    except Exception as e:
-        return f"Erro ao processar {file_path}: {e}"
-
-
-def process_zip(file_path, error_log):
-    """Processa apenas o arquivo manifest.sii na raiz do ZIP"""
-    temp_dir = Path(file_path).parent / "temp_zip"
-    try:
-        with zipfile.ZipFile(file_path, 'r') as zip_ref:
-            manifest_files = [f for f in zip_ref.namelist() if f.lower() == "manifest.sii"]
-            if not manifest_files:
-                return f"Sem manifest.sii na raiz: {file_path}"
-
-            zip_ref.extractall(temp_dir)
-
-        manifest_path = temp_dir / manifest_files[0]
-        result = process_manifest(manifest_path)
-
-        with zipfile.ZipFile(file_path, 'w') as zip_ref:
-            for root, dirs, files in os.walk(temp_dir):
-                for file in files:
-                    full_path = os.path.join(root, file)
-                    arcname = os.path.relpath(full_path, temp_dir)
-                    zip_ref.write(full_path, arcname)
-
-        return result
-    except Exception as e:
-        error_log.write(f"Erro ao processar ZIP {file_path}: {e}\n")
-        return f"Erro ao processar ZIP: {file_path}"
-    finally:
-        remove_temp_dir(temp_dir, error_log)
-
-
-def remove_temp_dir(temp_dir, error_log):
-    """Remove a pasta temporária com mais controle"""
-    try:
-        for root, dirs, files in os.walk(temp_dir, topdown=False):
-            for file in files:
-                try:
-                    os.remove(os.path.join(root, file))
-                except Exception as e:
-                    error_log.write(f"Erro ao remover arquivo {file}: {e}\n")
-            for dir in dirs:
-                try:
-                    os.rmdir(os.path.join(root, dir))
-                except Exception as e:
-                    error_log.write(f"Erro ao remover diretório {dir}: {e}\n")
-        temp_dir.rmdir()
-    except Exception as e:
-        error_log.write(f"Erro ao remover pasta temporária {temp_dir}: {e}\n")
-
+from concurrent.futures import ThreadPoolExecutor
 
 class ModProcessorApp:
     def __init__(self, root):
@@ -101,6 +12,7 @@ class ModProcessorApp:
         self.root.geometry("900x600")
         self.theme = "dark"
         self.error_log_path = "error_log.txt"
+        self.max_threads = os.cpu_count()  # Define a quantidade de threads igual aos núcleos lógicos do sistema
 
         self.setup_ui()
 
@@ -111,7 +23,7 @@ class ModProcessorApp:
         self.frame.pack(fill=tk.BOTH, expand=True)
 
         self.log_text = tk.Text(self.frame, wrap=tk.WORD, bg="black", fg="white", insertbackground="white", font=("Consolas", 12))
-        self.log_text.insert(tk.END, "Selecione a pasta da Steam Workshop para iniciar.\n", "title")
+        self.log_text.insert(tk.END, f"Selecione a pasta da Steam Workshop para iniciar. Usando {self.max_threads} threads.\n", "title")
         self.log_text.insert(tk.END, "Caminho sugerido: C:/Program Files (x86)/Steam/steamapps/workshop/content/227300\n")
         self.log_text.tag_config("title", font=("Helvetica", 14, "bold"))
         self.log_text.pack(fill=tk.BOTH, expand=True)
@@ -153,41 +65,109 @@ class ModProcessorApp:
             self.run_btn.config(state=tk.NORMAL)
 
     def start_processing(self):
-        """Inicia o processamento"""
+        """Inicia o processamento em uma thread separada"""
         self.run_btn.config(state=tk.DISABLED, text="Processando...")
         self.log_text.insert(tk.END, "Iniciando processamento...\n")
         self.progress_bar['value'] = 0
 
-        thread = threading.Thread(target=self.process_files)
-        thread.start()
+        thread_pool = ThreadPoolExecutor(max_workers=self.max_threads)
+        thread_pool.submit(self.process_files)
 
     def process_files(self):
-        """Processa os arquivos"""
-        all_files = []
-        for root, dirs, files in os.walk(self.base_folder):
-            for file in files:
-                file_path = os.path.join(root, file)
-                if file.lower() == "manifest.sii" or file.endswith(".zip"):
-                    all_files.append(file_path)
-
+        """Processa os arquivos usando múltiplas threads"""
+        all_files = [os.path.join(root, file) for root, dirs, files in os.walk(self.base_folder) for file in files if file.lower() == "manifest.sii" or file.endswith(".zip")]
         total_files = len(all_files)
         self.progress_bar['maximum'] = total_files
 
         with open(self.error_log_path, "w", encoding="utf-8") as error_log:
-            for i, file in enumerate(all_files):
-                if file.lower().endswith("manifest.sii"):
-                    result = process_manifest(file)
-                elif file.endswith(".zip"):
-                    result = process_zip(file, error_log)
-                else:
-                    result = f"Ignorado: {file}"
+            with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+                futures = {executor.submit(self.process_single_file, file, error_log): file for file in all_files}
 
-                self.log_text.insert(tk.END, f"{result}\n")
-                self.progress_bar['value'] = i + 1
+                for i, future in enumerate(futures):
+                    try:
+                        result = future.result()
+                        self.log_text.insert(tk.END, f"{result}\n")
+                    except Exception as e:
+                        self.log_text.insert(tk.END, f"Erro: {e}\n")
+                    self.progress_bar['value'] = i + 1
 
         self.run_btn.config(state=tk.NORMAL, text="Executar")
         self.log_text.insert(tk.END, "Processamento concluído!\n")
-        messagebox.showinfo("Concluído", "Processamento finalizado com sucesso! Verifique error_log.txt para detalhes de erros.")
+        messagebox.showinfo("Concluído", "Processamento finalizado com sucesso!")
+
+    def process_single_file(self, file_path, error_log):
+        """Processa um único arquivo, seja ZIP ou manifest.sii"""
+        if file_path.lower().endswith("manifest.sii"):
+            return self.process_manifest(file_path)
+        elif file_path.endswith(".zip"):
+            return self.process_zip(file_path, error_log)
+        return f"Ignorado: {file_path}"
+
+    def process_manifest(self, file_path):
+        """Corrige e adiciona a linha no arquivo manifest.sii se necessário"""
+        try:
+            with open(file_path, 'r', encoding='utf-8') as file:
+                lines = file.readlines()
+
+            if any("mp_mod_optional: true" in line for line in lines):
+                return f"Já está correto: {file_path}"
+
+            corrected_lines = []
+            inside_package = False
+
+            for line in lines:
+                corrected_lines.append(line)
+                if line.strip().startswith("mod_package"):
+                    inside_package = True
+                if inside_package and line.strip() == "}":
+                    corrected_lines.insert(-1, "    mp_mod_optional: true\n")
+                    inside_package = False
+
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.writelines(corrected_lines)
+
+            return f"Modificado: {file_path}"
+
+        except Exception as e:
+            return f"Erro ao processar {file_path}: {e}"
+
+    def process_zip(self, file_path, error_log):
+        """Processa apenas o arquivo manifest.sii na raiz do ZIP sem alterar a estrutura"""
+        temp_dir = Path(file_path).parent / "temp_zip"
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                if "manifest.sii" not in zip_ref.namelist():
+                    return f"Sem manifest.sii na raiz: {file_path}"
+                zip_ref.extract("manifest.sii", temp_dir)
+
+            manifest_path = temp_dir / "manifest.sii"
+            result = self.process_manifest(manifest_path)
+
+            with zipfile.ZipFile(file_path, 'w', zipfile.ZIP_DEFLATED) as zip_ref:
+                for root, dirs, files in os.walk(temp_dir):
+                    for file in files:
+                        full_path = os.path.join(root, file)
+                        arcname = os.path.relpath(full_path, temp_dir)
+                        zip_ref.write(full_path, arcname)
+
+            return result
+        except Exception as e:
+            error_log.write(f"Erro ao processar ZIP {file_path}: {e}\n")
+            return f"Erro ao processar ZIP: {file_path}"
+        finally:
+            self.remove_temp_dir(temp_dir, error_log)
+
+    def remove_temp_dir(self, temp_dir, error_log):
+        """Remove a pasta temporária com mais controle"""
+        try:
+            for root, dirs, files in os.walk(temp_dir, topdown=False):
+                for file in files:
+                    os.remove(os.path.join(root, file))
+                for dir in dirs:
+                    os.rmdir(os.path.join(root, dir))
+            temp_dir.rmdir()
+        except Exception as e:
+            error_log.write(f"Erro ao remover pasta temporária {temp_dir}: {e}\n")
 
 
 if __name__ == "__main__":
