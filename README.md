@@ -14,3 +14,6 @@ Este projeto é um programa em Python para modificar o arquivo `manifest.sii` do
 
 ## Hash SHA256
 Para garantir a integridade do arquivo, confira a hash SHA256: 3d51ae567c1e18667cc6981e09776482b676d1592516b0195af0f3caf9bdacd9
+
+## Licença
+Este projeto é licenciado sob a [GNU GPL v3](LICENSE).
