@@ -18,7 +18,7 @@ Este projeto é um programa em Python para modificar o arquivo `manifest.sii` do
 
 ## Verificação de Integridade
 Confira a hash SHA256 do executável:
-SHA256: 3d51ae567c1e18667cc6981e09776482b676d1592516b0195af0f3caf9bdacd9
+SHA256: 6c1e1d1c47fbf46dc2a24cb1f4c55a73aae81bd15b028208d594bfc877df30d9
 
 ## Licença
 Este projeto é licenciado sob a [GNU GPL v3](LICENSE).
